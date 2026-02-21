@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.syam.claude-session-watch</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/syam/Documents/CA-2026/claude-monitor.sh</string>
+  </array>
+
+  <!-- Run every 5 minutes (300 seconds) -->
+  <key>StartInterval</key>
+  <integer>300</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/syam/.claude_monitor.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/syam/.claude_monitor_err.log</string>
+
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>
