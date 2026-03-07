@@ -1,0 +1,11 @@
+# Claude Monitor Configuration
+# Copy to: ~/.config/claude-monitor/config
+
+# Notification thresholds (comma-separated percentages)
+# Default: 10,20,30,40,50,60,70,80,90,100
+THRESHOLDS=25,50,75,90,100
+
+# Browser preference order (comma-separated)
+# Options: chrome, arc, safari
+# Default: chrome,arc,safari
+BROWSERS=chrome,arc,safari

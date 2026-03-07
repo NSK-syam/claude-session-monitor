@@ -1,125 +1,138 @@
 # Claude Session Monitor
 
-Automatic Mac notifications when your Claude usage hits every 10% — tracks both **Current Session** and **Weekly limits**.
+Automatic Mac notifications when your Claude usage hits configurable thresholds — tracks both **Current Session** and **Weekly limits**.
 
-Reads the real usage percentage directly from `claude.ai/settings/usage` in Chrome and fires native Mac notifications at 10%, 20%, 30%... up to 100%.
+**Features:**
+- One-command installer
+- Custom notification thresholds (10%, 25%, 50%, etc.)
+- Multi-browser support (Chrome, Arc, Safari)
+- Usage prediction ("~2h to limit")
+- Menu bar widget (via SwiftBar)
 
 ## Requirements
 
 - **macOS**
-- **Google Chrome** — must be open and logged into `claude.ai`
+- **Chrome, Arc, or Safari** — must be open and logged into `claude.ai`
 - **Claude Pro or Max** subscription
 
-## Quick Setup
-
-### 1. Clone the repo
+## Quick Install
 
 ```bash
 git clone https://github.com/NSK-syam/claude-session-monitor.git
 cd claude-session-monitor
+./install.sh
 ```
 
-### 2. Make script executable
-
-```bash
-chmod +x claude-monitor.sh
-```
-
-### 3. Enable AppleScript in Chrome
-
-1. Open **Google Chrome**
-2. Menu bar: **View → Developer → Allow JavaScript from Apple Events**
-3. Click to enable (checkmark appears)
-
-### 4. Update paths in the plist
-
-Find your home path:
-
-```bash
-echo $HOME
-```
-
-Edit `com.syam.claude-session-watch.plist` and replace `/Users/syam` with your path:
-
-```xml
-<string>/Users/YOUR_USERNAME/claude-session-monitor/claude-monitor.sh</string>
-<string>/Users/YOUR_USERNAME/.claude_monitor.log</string>
-<string>/Users/YOUR_USERNAME/.claude_monitor_err.log</string>
-```
-
-### 5. Install and start
-
-```bash
-cp com.syam.claude-session-watch.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.syam.claude-session-watch.plist
-```
-
-Done! It runs automatically every 5 minutes in the background.
-
-## Test It
-
-```bash
-bash claude-monitor.sh && tail -5 ~/.claude_monitor.log
-```
-
-You should see:
-
-```
-[2026-03-06 19:00] Current Session: 31% | Weekly: 28%
-```
+That's it! The monitor runs automatically every 5 minutes.
 
 ## What You Get
 
-| Usage | Notification |
-|-------|-------------|
-| 10% | ⚠️ Claude Session — 10% threshold reached |
-| 20% | ⚠️ Claude Session — 20% threshold reached |
-| ... | ... |
-| 100% | ⚠️ Claude Session — 100% threshold reached |
+```
+[2026-03-06 19:00] Current Session: 31% | Weekly: 28% | ETA: ~2h 15m
+```
 
-Same for Weekly limits. Each threshold fires **once** per session/week.
+Notifications fire at each threshold (default: every 10%). Includes time prediction showing when you'll hit the limit.
 
-## Make Notifications Stay Longer
+## Configuration
 
-By default, Mac notifications disappear in 2 seconds. To make them stay until you dismiss:
-
-**System Settings → Notifications → Terminal → Change "Banners" to "Alerts"**
-
-## Manage the Service
+Edit `~/.config/claude-monitor/config`:
 
 ```bash
+# Custom thresholds (comma-separated)
+THRESHOLDS=25,50,75,90,100
+
+# Browser order (tries each until one works)
+BROWSERS=chrome,arc,safari
+```
+
+## Menu Bar Widget
+
+Shows live usage in your menu bar with color coding (green/orange/red).
+
+1. Install SwiftBar:
+   ```bash
+   brew install --cask swiftbar
+   ```
+
+2. Run SwiftBar once and set your plugins folder
+
+3. Install the plugin:
+   ```bash
+   ./install.sh --menubar
+   ```
+
+## Browser Setup
+
+### Chrome / Arc
+Menu bar: **View → Developer → Allow JavaScript from Apple Events**
+
+### Safari
+**Safari → Settings → Advanced → Show Develop menu**
+Then: **Develop → Allow JavaScript from Apple Events**
+
+## Commands
+
+```bash
+# View live logs
+tail -f ~/.claude_monitor.log
+
 # Check status
 launchctl list | grep claude
 
-# Stop
-launchctl unload ~/Library/LaunchAgents/com.syam.claude-session-watch.plist
+# Stop monitor
+launchctl unload ~/Library/LaunchAgents/com.claude.session-monitor.plist
 
-# Start
-launchctl load ~/Library/LaunchAgents/com.syam.claude-session-watch.plist
+# Start monitor
+launchctl load ~/Library/LaunchAgents/com.claude.session-monitor.plist
 
-# View logs
-tail -f ~/.claude_monitor.log
+# Run manually
+bash ~/claude-session-monitor/claude-monitor.sh
 ```
 
-## Troubleshooting
+## Make Notifications Stay Longer
 
-**"Could not read Claude page"**
-- Chrome must be open with `claude.ai` logged in
-- Enable: View → Developer → Allow JavaScript from Apple Events
+By default, Mac notifications disappear quickly. To make them stay until dismissed:
 
-**No notifications**
-- System Settings → Notifications → Terminal → Allow notifications
-- Test: `osascript -e 'display notification "test" with title "Test"'`
+**System Settings → Notifications → Terminal → Change "Banners" to "Alerts"**
 
 ## How It Works
 
 1. launchd runs the script every 5 minutes
-2. Script uses AppleScript to read Chrome's Claude tab
-3. Parses "X% used" for both Current Session and Weekly
-4. Fires Mac notification when any 10% threshold is crossed
-5. Tracks state in `~/.claude_monitor_session` and `~/.claude_monitor_weekly`
+2. Script checks Chrome → Arc → Safari (in order) for Claude tab
+3. Reads "X% used" for both Current Session and Weekly limits
+4. Tracks usage history to predict time to 100%
+5. Fires Mac notification when any threshold is crossed
+6. Menu bar plugin reads the log and displays current status
 
-No credentials stored. Runs entirely locally. Only reads your browser — never modifies anything.
+## Files
+
+| File | Purpose |
+|------|---------|
+| `claude-monitor.sh` | Core monitoring script |
+| `install.sh` | One-command installer |
+| `claude-usage.5m.sh` | SwiftBar menu bar plugin |
+| `config.example` | Example configuration |
+
+## Privacy & Security
+
+- No API keys or passwords stored
+- Runs entirely locally — no data sent anywhere
+- Only reads browser tabs — never modifies anything
+- Browser JavaScript access is scoped to the browser only
+
+## Troubleshooting
+
+**"Could not read Claude page"**
+- Browser must be open with `claude.ai` logged in
+- Enable JavaScript from Apple Events (see Browser Setup above)
+
+**No notifications**
+- System Settings → Notifications → Terminal → Allow
+- Test: `osascript -e 'display notification "test" with title "Test"'`
+
+**Menu bar not updating**
+- Click the menu bar icon → Refresh
+- Or run: `bash ~/claude-session-monitor/claude-monitor.sh`
 
 ## License
 
