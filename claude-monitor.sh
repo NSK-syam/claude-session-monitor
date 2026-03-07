@@ -36,12 +36,18 @@ notify() {
 
 # ── Browser Scrapers ───────────────────────────────────────────────────────────
 
+# Single-line JS to extract usage percentages using visible text (innerText)
+# Uses indexOf to find "Current session" and "All models" headers to correctly
+# assign session vs weekly percentages
+USAGE_JS="(function(){var t=document.body.innerText;var m=t.match(/[0-9]+% used/ig);if(!m||m.length===0)return '';var s='';var w='';var si=t.indexOf('Current session');var wi=t.indexOf('All models');if(wi<0)wi=t.indexOf('Weekly limits');if(si>=0){for(var i=0;i<m.length;i++){var p=t.indexOf(m[i],si);if(p>=si&&(wi<0||p<wi)){s=m[i];break}}}if(wi>=0){for(var i=0;i<m.length;i++){var p=t.indexOf(m[i],wi);if(p>=wi&&(si<0||p>si+50)){w=m[i];break}}}if(!s&&m.length>0)s=m[0];if(!w&&m.length>1)w=m[1];return s+'|'+w})()"
+
 get_usage_from_chrome() {
-  osascript <<'APPLESCRIPT' 2>/dev/null
+  osascript <<EOF 2>/dev/null
 tell application "System Events"
   if not (exists process "Google Chrome") then return ""
 end tell
 tell application "Google Chrome"
+  set lastResult to ""
   repeat with w in windows
     repeat with t in tabs of w
       if URL of t contains "claude.ai" then
@@ -49,38 +55,23 @@ tell application "Google Chrome"
           set URL of t to "https://claude.ai/settings/usage"
           delay 3
         end if
-        set js to "
-          (function() {
-            const walker = document.createTreeWalker(
-              document.body, NodeFilter.SHOW_TEXT, null
-            );
-            let node;
-            let percentages = [];
-            while (node = walker.nextNode()) {
-              const txt = node.textContent.trim();
-              if (txt.match(/^\\d+% used$/i)) {
-                percentages.push(txt);
-              }
-            }
-            return percentages.slice(0, 2).join('|');
-          })()
-        "
-        set result to execute t javascript js
-        if result is not "" then return result
+        set r to execute t javascript "${USAGE_JS}"
+        if r is not "" then set lastResult to r
       end if
     end repeat
   end repeat
-  return ""
+  return lastResult
 end tell
-APPLESCRIPT
+EOF
 }
 
 get_usage_from_arc() {
-  osascript <<'APPLESCRIPT' 2>/dev/null
+  osascript <<EOF 2>/dev/null
 tell application "System Events"
   if not (exists process "Arc") then return ""
 end tell
 tell application "Arc"
+  set lastResult to ""
   repeat with w in windows
     repeat with t in tabs of w
       if URL of t contains "claude.ai" then
@@ -88,38 +79,23 @@ tell application "Arc"
           set URL of t to "https://claude.ai/settings/usage"
           delay 3
         end if
-        set js to "
-          (function() {
-            const walker = document.createTreeWalker(
-              document.body, NodeFilter.SHOW_TEXT, null
-            );
-            let node;
-            let percentages = [];
-            while (node = walker.nextNode()) {
-              const txt = node.textContent.trim();
-              if (txt.match(/^\\d+% used$/i)) {
-                percentages.push(txt);
-              }
-            }
-            return percentages.slice(0, 2).join('|');
-          })()
-        "
-        set result to execute t javascript js
-        if result is not "" then return result
+        set r to execute t javascript "${USAGE_JS}"
+        if r is not "" then set lastResult to r
       end if
     end repeat
   end repeat
-  return ""
+  return lastResult
 end tell
-APPLESCRIPT
+EOF
 }
 
 get_usage_from_safari() {
-  osascript <<'APPLESCRIPT' 2>/dev/null
+  osascript <<EOF 2>/dev/null
 tell application "System Events"
   if not (exists process "Safari") then return ""
 end tell
 tell application "Safari"
+  set lastResult to ""
   repeat with w in windows
     repeat with t in tabs of w
       if URL of t contains "claude.ai" then
@@ -127,30 +103,14 @@ tell application "Safari"
           set URL of t to "https://claude.ai/settings/usage"
           delay 3
         end if
-        set js to "
-          (function() {
-            const walker = document.createTreeWalker(
-              document.body, NodeFilter.SHOW_TEXT, null
-            );
-            let node;
-            let percentages = [];
-            while (node = walker.nextNode()) {
-              const txt = node.textContent.trim();
-              if (txt.match(/^\\d+% used$/i)) {
-                percentages.push(txt);
-              }
-            }
-            return percentages.slice(0, 2).join('|');
-          })()
-        "
-        set result to do JavaScript js in t
-        if result is not "" then return result
+        set r to do JavaScript "${USAGE_JS}" in t
+        if r is not "" then set lastResult to r
       end if
     end repeat
   end repeat
-  return ""
+  return lastResult
 end tell
-APPLESCRIPT
+EOF
 }
 
 # Try browsers in configured order
@@ -294,7 +254,7 @@ PREDICTION=$(predict_time_to_full "$SESSION_PERCENT")
 
 log "Current Session: $SESSION_PERCENT% | Weekly: $WEEKLY_PERCENT%${PREDICTION:+ | ETA: ~$PREDICTION}"
 
-# Check thresholds for both
+# Check thresholds for both session and weekly
 if [ -n "$SESSION_TEXT" ]; then
   check_threshold "Session" "$SESSION_PERCENT" "$SESSION_STATE_FILE" "$PREDICTION"
 fi
