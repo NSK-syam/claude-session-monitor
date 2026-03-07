@@ -1,10 +1,12 @@
 #!/bin/bash
 # claude-monitor.sh
-# Reads actual Claude session timer from claude.ai/settings/usage in Chrome.
-# Fires Mac notifications at 60, 30, 15, 5 min before the session resets.
+# Reads Claude session usage percentage from claude.ai/settings/usage in Chrome.
+# Tracks both Current Session and Weekly limits.
+# Fires Mac notifications every 10% usage (10%, 20%, 30%, ... 100%).
 # Run every 5 min via launchd — fully automatic, no manual input.
 
-STATE_FILE="$HOME/.claude_monitor_threshold"
+SESSION_STATE_FILE="$HOME/.claude_monitor_session"
+WEEKLY_STATE_FILE="$HOME/.claude_monitor_weekly"
 LOG_FILE="$HOME/.claude_monitor.log"
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -19,7 +21,7 @@ notify() {
 
 # ── Scrape Claude settings page from Chrome ────────────────────────────────────
 
-get_mins_remaining() {
+get_usage_percents() {
   osascript <<'APPLESCRIPT'
 tell application "Google Chrome"
   set result to ""
@@ -37,13 +39,16 @@ tell application "Google Chrome"
               document.body, NodeFilter.SHOW_TEXT, null
             );
             let node;
+            let percentages = [];
             while (node = walker.nextNode()) {
               const txt = node.textContent.trim();
-              if (txt.match(/Resets in/i)) {
-                return txt;
+              // Look for 'X% used' patterns
+              if (txt.match(/^\\d+% used$/i)) {
+                percentages.push(txt);
               }
             }
-            return '';
+            // Return first two: session and weekly
+            return percentages.slice(0, 2).join('|');
           })()
         "
         set result to execute t javascript js
@@ -56,55 +61,63 @@ end tell
 APPLESCRIPT
 }
 
-# ── Parse "Resets in X hr Y min" or "Resets in Y min" → total minutes ─────────
+# ── Parse "X% used" → percentage number ───────────────────────────────────────
 
-parse_minutes() {
+parse_percent() {
   local text="$1"
-  local hours=0 mins=0
+  echo "$text" | grep -oE '^[0-9]+' || echo 0
+}
 
-  if echo "$text" | grep -qE '[0-9]+ hr'; then
-    hours=$(echo "$text" | grep -oE '[0-9]+ hr' | grep -oE '[0-9]+')
-  fi
-  if echo "$text" | grep -qE '[0-9]+ min'; then
-    mins=$(echo "$text" | grep -oE '[0-9]+ min' | tail -1 | grep -oE '[0-9]+')
+# ── Check and notify for a single metric ──────────────────────────────────────
+
+check_threshold() {
+  local name="$1"
+  local percent="$2"
+  local state_file="$3"
+
+  # Load last notified threshold (default 0 = no alerts sent yet)
+  local last_notified=$(cat "$state_file" 2>/dev/null || echo 0)
+
+  # If usage dropped below last notified threshold, reset (new session/week)
+  if [ "$percent" -lt "$last_notified" ]; then
+    echo 0 > "$state_file"
+    last_notified=0
   fi
 
-  echo $(( hours * 60 + mins ))
+  # Fire notification at each 10% threshold (10, 20, 30, ... 100)
+  for threshold in 10 20 30 40 50 60 70 80 90 100; do
+    if [ "$percent" -ge "$threshold" ] && [ "$last_notified" -lt "$threshold" ]; then
+      notify "⚠️ Claude $name" "${percent}% used — ${threshold}% threshold reached"
+      echo "$threshold" > "$state_file"
+      log "$name: Notified at $threshold% threshold (actual: $percent%)"
+      break
+    fi
+  done
 }
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
-RESET_TEXT=$(get_mins_remaining)
+USAGE_TEXT=$(get_usage_percents)
 
-if [ -z "$RESET_TEXT" ]; then
+if [ -z "$USAGE_TEXT" ]; then
   log "WARNING: Could not read Claude page — Chrome must be open and logged into claude.ai"
   exit 0
 fi
 
-MINS_LEFT=$(parse_minutes "$RESET_TEXT")
+# Split the two percentages (session|weekly)
+SESSION_TEXT=$(echo "$USAGE_TEXT" | cut -d'|' -f1)
+WEEKLY_TEXT=$(echo "$USAGE_TEXT" | cut -d'|' -f2)
 
-if [ "$MINS_LEFT" -eq 0 ]; then
-  log "WARNING: Could not parse time from: '$RESET_TEXT'"
-  exit 0
+SESSION_PERCENT=$(parse_percent "$SESSION_TEXT")
+WEEKLY_PERCENT=$(parse_percent "$WEEKLY_TEXT")
+
+log "Current Session: $SESSION_PERCENT% | Weekly: $WEEKLY_PERCENT%"
+
+# Check thresholds for both
+if [ -n "$SESSION_TEXT" ]; then
+  check_threshold "Session" "$SESSION_PERCENT" "$SESSION_STATE_FILE"
 fi
 
-log "Session: $MINS_LEFT min remaining (\"$RESET_TEXT\")"
-
-# Load last notified threshold (default 999 = fresh / no alerts sent yet)
-LAST_NOTIFIED=$(cat "$STATE_FILE" 2>/dev/null || echo 999)
-
-# If we're back above 60 min, reset threshold tracker (new/reset session)
-if [ "$MINS_LEFT" -gt 60 ]; then
-  echo 999 > "$STATE_FILE"
-  LAST_NOTIFIED=999
+if [ -n "$WEEKLY_TEXT" ]; then
+  check_threshold "Weekly" "$WEEKLY_PERCENT" "$WEEKLY_STATE_FILE"
 fi
-
-# Fire each threshold once, descending (highest first so we don't double-fire)
-for threshold in 60 30 15 5; do
-  if [ "$MINS_LEFT" -le "$threshold" ] && [ "$LAST_NOTIFIED" -gt "$threshold" ]; then
-    notify "⚠️ Claude Session" "${MINS_LEFT} min until session resets — save your work!"
-    echo "$threshold" > "$STATE_FILE"
-    log "Notified at $threshold-min threshold (actual: $MINS_LEFT min)"
-    break
-  fi
-done
