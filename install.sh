@@ -83,9 +83,11 @@ echo -e "      ${GREEN}✓${NC} Created plist at $LAUNCH_AGENTS/$PLIST_NAME"
 
 # Step 4: Unload old plist if exists, then load new one
 echo -e "${YELLOW}[4/5]${NC} Loading launchd agent..."
-launchctl unload "$LAUNCH_AGENTS/$PLIST_NAME" 2>/dev/null || true
-launchctl unload "$LAUNCH_AGENTS/com.syam.claude-session-watch.plist" 2>/dev/null || true
-launchctl load "$LAUNCH_AGENTS/$PLIST_NAME"
+LAUNCHCTL_DOMAIN="gui/$(id -u)"
+launchctl bootout "$LAUNCHCTL_DOMAIN" "$LAUNCH_AGENTS/$PLIST_NAME" 2>/dev/null || true
+launchctl bootout "$LAUNCHCTL_DOMAIN" "$LAUNCH_AGENTS/com.syam.claude-session-watch.plist" 2>/dev/null || true
+launchctl load "$LAUNCH_AGENTS/$PLIST_NAME" 2>/dev/null || \
+  launchctl bootstrap "$LAUNCHCTL_DOMAIN" "$LAUNCH_AGENTS/$PLIST_NAME"
 echo -e "      ${GREEN}✓${NC} Agent loaded (runs every 5 minutes)"
 
 # Step 5: Test run
@@ -130,8 +132,8 @@ echo "Logs:          ~/.claude_monitor.log"
 echo ""
 echo "Commands:"
 echo "  View logs:    tail -f ~/.claude_monitor.log"
-echo "  Stop:         launchctl unload ~/Library/LaunchAgents/$PLIST_NAME"
-echo "  Start:        launchctl load ~/Library/LaunchAgents/$PLIST_NAME"
+echo "  Stop:         launchctl bootout gui/\$(id -u) ~/Library/LaunchAgents/$PLIST_NAME"
+echo "  Start:        launchctl bootstrap gui/\$(id -u) ~/Library/LaunchAgents/$PLIST_NAME"
 echo ""
 if [[ "$1" != "--menubar" ]]; then
   echo "For menu bar widget: ./install.sh --menubar"

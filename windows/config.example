@@ -1,0 +1,10 @@
+# Claude Monitor Configuration (Windows)
+# Copy to: %APPDATA%\claude-monitor\config
+
+# Notification thresholds (comma-separated percentages)
+# Default: 10,20,30,40,50,60,70,80,90,100
+THRESHOLDS=25,50,75,90,100
+
+# Chrome DevTools Protocol port (must match --remote-debugging-port on your browser)
+# Default: 9222
+DEBUG_PORT=9222

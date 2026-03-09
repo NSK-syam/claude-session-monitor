@@ -19,9 +19,18 @@ LOG_FILE="$HOME/.claude_monitor.log"
 THRESHOLDS="10,20,30,40,50,60,70,80,90,100"
 BROWSERS="chrome,arc,safari"
 
-# Load config if exists
+# Load config if exists (parse key=value only — never source/execute)
 if [ -f "$CONFIG_FILE" ]; then
-  source "$CONFIG_FILE"
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [ -z "$line" ] && continue
+    case "$line" in
+      THRESHOLDS=*) THRESHOLDS="${line#THRESHOLDS=}" ;;
+      BROWSERS=*)   BROWSERS="${line#BROWSERS=}" ;;
+    esac
+  done < "$CONFIG_FILE"
 fi
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -36,10 +45,27 @@ notify() {
 
 # ── Browser Scrapers ───────────────────────────────────────────────────────────
 
-# Single-line JS to extract usage percentages using visible text (innerText)
-# Uses indexOf to find "Current session" and "All models" headers to correctly
-# assign session vs weekly percentages
-USAGE_JS="(function(){var t=document.body.innerText;var m=t.match(/[0-9]+% used/ig);if(!m||m.length===0)return '';var s='';var w='';var si=t.indexOf('Current session');var wi=t.indexOf('All models');if(wi<0)wi=t.indexOf('Weekly limits');if(si>=0){for(var i=0;i<m.length;i++){var p=t.indexOf(m[i],si);if(p>=si&&(wi<0||p<wi)){s=m[i];break}}}if(wi>=0){for(var i=0;i<m.length;i++){var p=t.indexOf(m[i],wi);if(p>=wi&&(si<0||p>si+50)){w=m[i];break}}}if(!s&&m.length>0)s=m[0];if(!w&&m.length>1)w=m[1];return s+'|'+w})()"
+USAGE_JS="$(cat <<'EOF'
+(function(){
+  const text = document.body.innerText || '';
+  const matches = text.match(/\\d+% used/ig) || [];
+  let s = '', w = '';
+  let sm = text.match(/Current session[\\s\\S]*?(\\d+% used)/i);
+  if (sm) s = sm[1];
+  let wm = text.match(/Weekly limits[\\s\\S]*?(\\d+% used)/i);
+  if (!wm) wm = text.match(/All models[\\s\\S]*?(\\d+% used)/i);
+  if (wm) w = wm[1];
+  if (!s && !w && matches.length > 0) {
+    s = matches[0] || ''; w = matches[1] || '';
+  } else if (!s && matches.length > 0 && matches[0] !== w) {
+    s = matches[0];
+  } else if (!w && matches.length > 1) {
+    w = matches[1];
+  }
+  return (s || '') + '|' + (w || '');
+})()
+EOF
+)"
 
 get_usage_from_chrome() {
   osascript <<EOF 2>/dev/null
